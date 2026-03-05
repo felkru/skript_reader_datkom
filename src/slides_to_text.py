@@ -1,0 +1,119 @@
+import os
+import base64
+from google import genai
+from google.genai import types
+from dotenv import load_dotenv
+
+load_dotenv()
+
+def generate(image_paths):
+    client = genai.Client(
+        api_key=os.environ.get("GEMINI_API_KEY"),
+    )
+
+    model = "gemini-flash-latest"
+    
+    parts = []
+    for path in image_paths:
+        with open(path, "rb") as f:
+            image_data = f.read()
+            parts.append(
+                types.Part.from_bytes(
+                    mime_type="image/png",
+                    data=image_data,
+                )
+            )
+            
+    parts.append(
+        types.Part.from_text(text="""Du bist ein professioneller Skriptautor für barrierefreie Hochschulmathematik. Deine Aufgabe ist die akustische Aufbereitung von Vorlesungsskripten.
+
+Deine Grundregel lautet: \"Absolute Hörbarkeit bei mathematischer Exaktheit.\"
+
+Du generierst ausschließlich reinen Fließtext. Du verwendest kein Markdown, keine Fettdruck-Markierungen, keine Listenpunkte und keine Sonderzeichen. Deine Ausgabe simuliert eine exzellente, flüssige Vorlesung, die von einer Text-to-Speech-Engine oder einem Sprecher vorgelesen wird.
+
+Jeder Eintrag im Output-Array repräsentiert eine Folie. Starte immer direkt mit dem Content, weil sich die Folien die du annotierst mitten in der Vorlesung befinden. Lies nur den Content und keine für den Inhalt irrelevanten Aspekte wie z.B. Teile des Folientemplates.""")
+    )
+
+    contents = [
+        types.Content(
+            role="user",
+            parts=parts,
+        ),
+    ]
+    
+    generate_content_config = types.GenerateContentConfig(
+        thinking_config=types.ThinkingConfig(
+            thinking_budget=-1,
+        ),
+        media_resolution="MEDIA_RESOLUTION_HIGH",
+        response_mime_type="application/json",
+        response_schema=genai.types.Schema(
+            type = genai.types.Type.OBJECT,
+            required = ["text"],
+            properties = {
+                "text": genai.types.Schema(
+                    type = genai.types.Type.ARRAY,
+                    items = genai.types.Schema(
+                        type = genai.types.Type.STRING,
+                    ),
+                ),
+            },
+        ),
+    )
+
+    import time
+    import random
+    
+    max_retries = 5
+    retry_delay = 1
+    
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=generate_content_config,
+            )
+            break
+        except Exception as e:
+            if "503" in str(e) or "overloaded" in str(e).lower():
+                if attempt < max_retries - 1:
+                    sleep_time = (retry_delay * (2 ** attempt)) + random.uniform(0, 1)
+                    print(f"Server busy (503). Retrying in {sleep_time:.2f} seconds... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(sleep_time)
+                    continue
+            raise e
+
+    
+    import json
+    try:
+        if response.parsed:
+            # If it's a Pydantic model or similar object with a 'text' attribute
+            if hasattr(response.parsed, "text"):
+                return response.parsed.text
+            # If it's already a dict
+            if isinstance(response.parsed, dict):
+                return response.parsed.get("text", [])
+        
+        # Fallback to response.text
+        data = json.loads(response.text)
+        if isinstance(data, dict):
+            return data.get("text", [response.text])
+        return [response.text]
+        
+    except Exception as e:
+        # Last resort: try one more time to find anything in the text that looks like our array
+        try:
+            data = json.loads(response.text)
+            if isinstance(data, dict) and "text" in data:
+                return data["text"]
+        except:
+            pass
+        return [response.text]
+
+
+
+
+if __name__ == "__main__":
+    # Test call if needed
+    pass
