@@ -1,0 +1,10 @@
+[project]
+name = "skript-reader-datkom"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "google-genai>=1.66.0",
+    "pymupdf>=1.27.1",
+]
