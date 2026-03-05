@@ -4,7 +4,9 @@ import re
 import struct
 from google import genai
 from google.genai import types
+from dotenv import load_dotenv
 
+load_dotenv()
 
 def save_binary_file(file_name, data):
     f = open(file_name, "wb")
@@ -13,14 +15,25 @@ def save_binary_file(file_name, data):
     print(f"File saved to to: {file_name}")
 
 
-def generate_audio(text: str, output_path: str):
-    """Generates audio from text using Gemini TTS and saves it to output_path."""
+import time
+import random
+
+def generate_audio(text: str, output_path: str, max_retries: int = 3):
+    """Generates audio from text using Gemini TTS and saves it to output_path.
+    
+    Args:
+        text: The text to convert to speech.
+        output_path: The base path (without extension) for the output audio file.
+        max_retries: Maximum number of retries for transient errors.
+    """
     client = genai.Client(
-        api_key=os.environ.get("GEMINI_API_KEY"),
+        vertexai=True,
+        project=os.environ.get("GCP_PROJECT_ID"),
+        location=os.environ.get("GCP_LOCATION"),
     )
 
-    # Using the model as originally specified
-    model = "gemini-2.5-flash-preview-tts" 
+    # Use the specific gemini-2.5-flash-tts model
+    model = "gemini-2.5-flash-tts" 
     
     contents = [
         types.Content(
@@ -43,62 +56,81 @@ def generate_audio(text: str, output_path: str):
         ),
     )
 
-    audio_data = b""
-    mime_type = None
-
     print(f"Generating audio for text (length: {len(text)})...")
     
-    for chunk in client.models.generate_content_stream(
-        model=model,
-        contents=contents,
-        config=generate_content_config,
-    ):
-        if chunk.parts is None:
-            continue
+    for attempt in range(max_retries + 1):
+        audio_data = b""
+        mime_type = None
+        
+        try:
+            for chunk in client.models.generate_content_stream(
+                model=model,
+                contents=contents,
+                config=generate_content_config,
+            ):
+                if chunk.parts is None:
+                    continue
+                    
+                for part in chunk.parts:
+                    if part.inline_data and part.inline_data.data:
+                        audio_data += part.inline_data.data
+                        if mime_type is None:
+                            mime_type = part.inline_data.mime_type
+                    elif part.text:
+                        print(f"Model response text: {part.text}")
+
+            if not audio_data:
+                print(f"Attempt {attempt + 1}: No audio data generated.")
+                if attempt < max_retries:
+                    continue
+                return False
+
+            # Determine file extension and handle WAV conversion if needed
+            file_extension = mimetypes.guess_extension(mime_type) if mime_type else None
             
-        for part in chunk.parts:
-            if part.inline_data and part.inline_data.data:
-                audio_data += part.inline_data.data
-                if mime_type is None:
-                    mime_type = part.inline_data.mime_type
-            elif part.text:
-                print(f"Model response text: {part.text}")
+            # If output_path doesn't have an extension, add one
+            actual_output_path = output_path
+            if not os.path.splitext(actual_output_path)[1]:
+                if file_extension:
+                    actual_output_path += file_extension
+                else:
+                    actual_output_path += ".wav"
 
-    if not audio_data:
-        print("Error: No audio data generated.")
-        return False
+            final_data = audio_data
+            if not file_extension or file_extension == ".wav":
+                if mime_type:
+                    final_data = convert_to_wav(audio_data, mime_type)
+                else:
+                    # Default to some standard PCM if mime_type is missing but we have data
+                    final_data = convert_to_wav(audio_data, "audio/L16;rate=24000")
 
-    # Determine file extension and handle WAV conversion if needed
-    file_extension = mimetypes.guess_extension(mime_type) if mime_type else None
-    
-    # If output_path doesn't have an extension, add one
-    if not os.path.splitext(output_path)[1]:
-        if file_extension:
-            output_path += file_extension
-        else:
-            output_path += ".wav"
+            save_binary_file(actual_output_path, final_data)
+            return True
 
-    final_data = audio_data
-    if not file_extension or file_extension == ".wav":
-        if mime_type:
-            final_data = convert_to_wav(audio_data, mime_type)
-        else:
-            # Default to some standard PCM if mime_type is missing but we have data
-            final_data = convert_to_wav(audio_data, "audio/L16;rate=24000")
-
-    save_binary_file(output_path, final_data)
-    return True
+        except Exception as e:
+            error_msg = str(e)
+            print(f"Attempt {attempt + 1} failed: {error_msg}")
+            
+            # Check for transient errors
+            is_transient = any(err in error_msg.lower() for err in [
+                "nameresolutionerror", 
+                "dns", 
+                "connection", 
+                "timeout", 
+                "503", 
+                "504", 
+                "deadline exceeded"
+            ])
+            
+            if attempt < max_retries and is_transient:
+                sleep_time = (2 ** attempt) + random.random()
+                print(f"Retrying in {sleep_time:.2f} seconds...")
+                time.sleep(sleep_time)
+            else:
+                return False
 
 def convert_to_wav(audio_data: bytes, mime_type: str) -> bytes:
-    """Generates a WAV file header for the given audio data and parameters.
-
-    Args:
-        audio_data: The raw audio data as a bytes object.
-        mime_type: Mime type of the audio data.
-
-    Returns:
-        A bytes object representing the WAV file header.
-    """
+    """Generates a WAV file header for the given audio data and parameters."""
     parameters = parse_audio_mime_type(mime_type)
     bits_per_sample = parameters["bits_per_sample"]
     sample_rate = parameters["rate"]
@@ -107,64 +139,48 @@ def convert_to_wav(audio_data: bytes, mime_type: str) -> bytes:
     bytes_per_sample = bits_per_sample // 8
     block_align = num_channels * bytes_per_sample
     byte_rate = sample_rate * block_align
-    chunk_size = 36 + data_size  # 36 bytes for header fields before data chunk size
-
-    # http://soundfile.sapp.org/doc/WaveFormat/
+    chunk_size = 36 + data_size
 
     header = struct.pack(
         "<4sI4s4sIHHIIHH4sI",
-        b"RIFF",          # ChunkID
-        chunk_size,       # ChunkSize (total file size - 8 bytes)
-        b"WAVE",          # Format
-        b"fmt ",          # Subchunk1ID
-        16,               # Subchunk1Size (16 for PCM)
-        1,                # AudioFormat (1 for PCM)
-        num_channels,     # NumChannels
-        sample_rate,      # SampleRate
-        byte_rate,        # ByteRate
-        block_align,      # BlockAlign
-        bits_per_sample,  # BitsPerSample
-        b"data",          # Subchunk2ID
-        data_size         # Subchunk2Size (size of audio data)
+        b"RIFF",
+        chunk_size,
+        b"WAVE",
+        b"fmt ",
+        16,
+        1,
+        num_channels,
+        sample_rate,
+        byte_rate,
+        block_align,
+        bits_per_sample,
+        b"data",
+        data_size
     )
     return header + audio_data
 
 def parse_audio_mime_type(mime_type: str) -> dict[str, int | None]:
-    """Parses bits per sample and rate from an audio MIME type string.
-
-    Assumes bits per sample is encoded like "L16" and rate as "rate=xxxxx".
-
-    Args:
-        mime_type: The audio MIME type string (e.g., "audio/L16;rate=24000").
-
-    Returns:
-        A dictionary with "bits_per_sample" and "rate" keys. Values will be
-        integers if found, otherwise None.
-    """
+    """Parses bits per sample and rate from an audio MIME type string."""
     bits_per_sample = 16
     rate = 24000
 
-    # Extract rate from parameters
     parts = mime_type.split(";")
-    for param in parts: # Skip the main type part
+    for param in parts:
         param = param.strip()
         if param.lower().startswith("rate="):
             try:
                 rate_str = param.split("=", 1)[1]
                 rate = int(rate_str)
             except (ValueError, IndexError):
-                # Handle cases like "rate=" with no value or non-integer value
-                pass # Keep rate as default
+                pass
         elif param.startswith("audio/L"):
             try:
                 bits_per_sample = int(param.split("L", 1)[1])
             except (ValueError, IndexError):
-                pass # Keep bits_per_sample as default if conversion fails
+                pass
 
     return {"bits_per_sample": bits_per_sample, "rate": rate}
 
 
 if __name__ == "__main__":
-    generate()
-
-
+    pass

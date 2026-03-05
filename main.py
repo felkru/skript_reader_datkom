@@ -5,8 +5,8 @@ from src.text_to_speech import generate_audio
 
 def main():
     # Configuration
-    start_slide = 60
-    end_slide = 120 
+    start_slide = 121 
+    end_slide = 200
     slides_dir = "slides"
     text_dir = "results/texts"
     audio_dir = "results/audios"
@@ -39,7 +39,7 @@ def main():
                 texts = generate([image_path])
                 
                 if texts and len(texts) > 0:
-                    time.sleep(1)  # Brief pause between successful requests
+                    time.sleep(2)  # Pause to avoid rate limits
                     text_content = texts[0]
                     if isinstance(text_content, list) and len(text_content) > 0:
                         text_content = text_content[0]
@@ -52,6 +52,9 @@ def main():
 
     if run_audio_gen:
         print(f"\nGenerating audio for slides {start_slide} to {end_slide}...")
+        consecutive_failures = 0
+        failure_threshold = 3
+        
         for i in range(start_slide, end_slide + 1):
             text_file = os.path.join(text_dir, f"text{i}.txt")
             audio_file_base = os.path.join(audio_dir, f"audio{i}")
@@ -76,8 +79,15 @@ def main():
             success = generate_audio(text_content, audio_file_base)
             if success:
                 print(f"Finished audio for slide {i}")
+                consecutive_failures = 0 # Reset on success
             else:
-                print(f"Failed to generate audio for slide {i}")
+                consecutive_failures += 1
+                print(f"Failed to generate audio for slide {i} (Consecutive failures: {consecutive_failures})")
+                
+                if consecutive_failures >= failure_threshold:
+                    print(f"\nCRITICAL: Reached threshold of {failure_threshold} consecutive failures.")
+                    print("Stopping audio generation to investigate connectivity or quota issues.")
+                    sys.exit(1)
 
 if __name__ == "__main__":
     main()

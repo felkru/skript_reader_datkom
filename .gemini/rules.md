@@ -1,3 +1,7 @@
-# Project Rules and Preferences
+# Project Rules
 
-- **Model Preservation**: Never change the model name in code (e.g., `gemini-2.5-flash-preview-tts` in `src/text_to_speech.py`) unless the USER explicitly requests it.
+- **Regional Preference**: Always prioritize `europe-west1` (Belgium) for GCP services.
+- **Model Availability Fallback**: If a specific model (e.g., Gemini 3 Flash Preview) is not available in `europe-west1`, use global endpoints and if that's not available use `us-central1`.
+- **Model Selection**:
+  - Use `gemini-3-flash-preview` for text generation from slides.
+  - Use `gemini-2.5-flash-tts` for audio generation.
