@@ -8,10 +8,13 @@ load_dotenv()
 
 def generate(image_paths):
     client = genai.Client(
-        api_key=os.environ.get("GEMINI_API_KEY"),
+        vertexai=True,
+        project=os.environ.get("GCP_PROJECT_ID"),
+        location="us-central1",
     )
 
-    model = "gemini-flash-latest"
+    # Diagnostic: Using stable gemini-2.0-flash
+    model = "gemini-2.0-flash"
     
     parts = []
     for path in image_paths:
@@ -42,9 +45,6 @@ Jeder Eintrag im Output-Array repräsentiert eine Folie. Starte immer direkt mit
     ]
     
     generate_content_config = types.GenerateContentConfig(
-        thinking_config=types.ThinkingConfig(
-            thinking_budget=-1,
-        ),
         media_resolution="MEDIA_RESOLUTION_HIGH",
         response_mime_type="application/json",
         response_schema=genai.types.Schema(
