@@ -97,12 +97,11 @@ def generate_audio(text: str, output_path: str, max_retries: int = 3):
                     actual_output_path += ".wav"
 
             final_data = audio_data
-            if not file_extension or file_extension == ".wav":
-                if mime_type:
-                    final_data = convert_to_wav(audio_data, mime_type)
-                else:
-                    # Default to some standard PCM if mime_type is missing but we have data
-                    final_data = convert_to_wav(audio_data, "audio/L16;rate=24000")
+            if mime_type and mime_type.startswith("audio/L"):
+                # Raw PCM data needs a WAV header
+                final_data = convert_to_wav(audio_data, mime_type)
+            elif not mime_type:
+                final_data = convert_to_wav(audio_data, "audio/L16;rate=24000")
 
             save_binary_file(actual_output_path, final_data)
             return True

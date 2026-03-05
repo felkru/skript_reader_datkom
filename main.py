@@ -40,10 +40,7 @@ def main():
                 
                 if texts and len(texts) > 0:
                     time.sleep(2)  # Pause to avoid rate limits
-                    text_content = texts[0]
-                    if isinstance(text_content, list) and len(text_content) > 0:
-                        text_content = text_content[0]
-                    
+                    text_content = texts[0] or ""
                     with open(text_file, "w", encoding="utf-8") as f:
                         f.write(text_content)
                     print(f"Saved text for slide {i} to {text_file}")

@@ -1,5 +1,7 @@
 import os
 import base64
+import time
+import random
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
@@ -61,9 +63,6 @@ Jeder Eintrag im Output-Array repräsentiert eine Folie. Starte immer direkt mit
         ),
     )
 
-    import time
-    import random
-    
     max_retries = 5
     retry_delay = 1
     
@@ -86,30 +85,14 @@ Jeder Eintrag im Output-Array repräsentiert eine Folie. Starte immer direkt mit
 
     
     import json
-    try:
-        if response.parsed:
-            # If it's a Pydantic model or similar object with a 'text' attribute
-            if hasattr(response.parsed, "text"):
-                return response.parsed.text
-            # If it's already a dict
-            if isinstance(response.parsed, dict):
-                return response.parsed.get("text", [])
-        
-        # Fallback to response.text
-        data = json.loads(response.text)
-        if isinstance(data, dict):
-            return data.get("text", [response.text])
-        return [response.text]
-        
-    except Exception as e:
-        # Last resort: try one more time to find anything in the text that looks like our array
-        try:
-            data = json.loads(response.text)
-            if isinstance(data, dict) and "text" in data:
-                return data["text"]
-        except:
-            pass
-        return [response.text]
+    if response.parsed:
+        if hasattr(response.parsed, "text"):
+            return response.parsed.text
+        if isinstance(response.parsed, dict):
+            return response.parsed.get("text", [])
+
+    data = json.loads(response.text)
+    return data.get("text", [response.text])
 
 
 
