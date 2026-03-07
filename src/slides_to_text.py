@@ -8,11 +8,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def _require_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise EnvironmentError(f"Required environment variable '{name}' is not set. See .env.example.")
+    return value
+
 def generate(image_paths):
     client = genai.Client(
         vertexai=True,
-        project=os.environ.get("GCP_PROJECT_ID"),
-        location="us-central1",
+        project=_require_env("GCP_PROJECT_ID"),
+        location=os.environ.get("GCP_LOCATION", "us-central1"),
     )
 
     # Diagnostic: Using stable gemini-2.0-flash
