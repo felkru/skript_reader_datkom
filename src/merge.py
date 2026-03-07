@@ -62,8 +62,9 @@ def merge_audios(start_slide=None, end_slide=None):
         
         title = f"Slide {slide_num}"
         
-        # Concat list
-        concat_content.append(f"file '{file.absolute()}'")
+        # Concat list — escape single quotes so the path is safe inside ffmpeg's concat format
+        escaped_path = str(file.absolute()).replace("'", "'\\''")
+        concat_content.append(f"file '{escaped_path}'")
         
         # FFMetadata chapter
         metadata_content.append("[CHAPTER]")
@@ -124,4 +125,12 @@ if __name__ == "__main__":
     parser.add_argument("--end", type=int, help="Ending slide number")
     
     args = parser.parse_args()
+
+    if args.start is not None and args.start < 1:
+        parser.error("--start must be a positive integer")
+    if args.end is not None and args.end < 1:
+        parser.error("--end must be a positive integer")
+    if args.start is not None and args.end is not None and args.start > args.end:
+        parser.error("--start must not be greater than --end")
+
     merge_audios(args.start, args.end)

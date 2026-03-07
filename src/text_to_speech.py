@@ -8,11 +8,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def _require_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise EnvironmentError(f"Required environment variable '{name}' is not set. See .env.example.")
+    return value
+
 def save_binary_file(file_name, data):
-    f = open(file_name, "wb")
-    f.write(data)
-    f.close()
-    print(f"File saved to to: {file_name}")
+    with open(file_name, "wb") as f:
+        f.write(data)
+    print(f"File saved to: {file_name}")
 
 
 import time
@@ -28,8 +33,8 @@ def generate_audio(text: str, output_path: str, max_retries: int = 3):
     """
     client = genai.Client(
         vertexai=True,
-        project=os.environ.get("GCP_PROJECT_ID"),
-        location=os.environ.get("GCP_LOCATION"),
+        project=_require_env("GCP_PROJECT_ID"),
+        location=_require_env("GCP_LOCATION"),
     )
 
     # Use the specific gemini-2.5-flash-tts model
