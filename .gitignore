@@ -19,3 +19,6 @@ results/
 *.tfstate
 *.tfstate.backup
 .terraform.lock.hcl
+
+# Environment variables
+.env
